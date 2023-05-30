@@ -1,6 +1,6 @@
 // This unholy garbage should have never seen the light of day.
 
-use image::{ImageBuffer, Rgba, Rgba32FImage, DynamicImage};
+use image::{DynamicImage, ImageBuffer, Rgba, Rgba32FImage};
 use msdf::{GlyphLoader, MSDFConfig, Projection, SDFTrait};
 use std::{collections::HashMap, marker::PhantomData};
 use texture_packer::{exporter::Exporter, TexturePacker, TexturePackerConfig};
@@ -42,9 +42,15 @@ impl FontAtlasGenerator {
         let mut font_glyphs = Vec::with_capacity(data.len());
         for (name, chars) in data.iter() {
             let face = ttf_parser::Face::from_slice(
-                FONT_RESOURCES.read().unwrap().get(name).unwrap_or(&crate::FontResource::default()).bytes,
+                FONT_RESOURCES
+                    .read()
+                    .unwrap()
+                    .get(name)
+                    .unwrap_or(&crate::FontResource::default())
+                    .bytes,
                 0,
-            ).unwrap();
+            )
+            .unwrap();
             let mut glyph_images = Vec::with_capacity(data.len());
             for c in *chars {
                 let glyph_index = face.glyph_index(*c).unwrap_or(GlyphId::default());

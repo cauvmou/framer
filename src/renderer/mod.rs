@@ -101,7 +101,11 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-        let (vertex_buffer, index_buffer, num_indices) = text_state.create_buffers(&self.device, self.size.width as f32, self.size.height as f32);
+        let (vertex_buffer, index_buffer, num_indices) = text_state.create_buffers(
+            &self.device,
+            self.size.width as f32,
+            self.size.height as f32,
+        );
         let text_bind_group = text_state.create_texture(&self.device, &self.queue);
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -122,7 +126,6 @@ impl State {
                 depth_stencil_attachment: None,
             });
 
-            
             render_pass.set_pipeline(&text_state.pipeline());
             render_pass.set_bind_group(0, &text_bind_group, &[]);
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
