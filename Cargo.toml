@@ -1,0 +1,19 @@
+[package]
+name = "framer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+winit = "^0.28"
+log = "^0.4"
+wgpu = "^0.16"
+async-std = { version = "1.12.0", features = ["attributes"]}
+msdf = "0.2.1"
+ttf-parser = "0.15.2"
+mint = "0.5.9"
+image = "0.24.6"
+texture_packer = "0.25.0"
+lazy_static = "1.4.0"
+bytemuck = { version = "1.13.1", features = ["derive"]}
