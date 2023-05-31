@@ -103,6 +103,7 @@ pub(crate) struct TextState {
     atlas: FontAtlas,
     texts: Vec<Text>,
     pipeline: wgpu::RenderPipeline,
+    pub(crate) texture_bind: Option<wgpu::BindGroup>,
 }
 
 impl TextState {
@@ -194,6 +195,7 @@ impl TextState {
             atlas,
             texts: Vec::new(),
             pipeline,
+            texture_bind: None,
         }
     }
 
@@ -210,6 +212,7 @@ impl TextState {
                 .map(|data| (data.0.to_owned(), data.1.as_slice()))
                 .collect(),
         );
+        self.texture_bind = None;
     }
 
     // Returns the vertex buffer, index buffer, and number of indices
@@ -222,18 +225,23 @@ impl TextState {
         let mut vertices: Vec<Vertex> = Vec::new();
         let mut indices: Vec<u16> = Vec::new();
         for text in &self.texts {
-            let mut start = (30.0, 30.0);
-            let size = 0.2f32;
+            let mut start = (30.0, 80.0);
+            let size = 0.05f32;
+            let mut prev: char = ' ';
             for c in text.literal.chars() {
                 let mut font = text.font.clone();
                 font.push(c);
                 let glyph = self.atlas.glyphs().get(&font).unwrap();
+
                 let frame = self.atlas.packer().get_frame(&font).unwrap();
                 let rect = frame.frame;
 
+                // TODO: TTF does NOT use the kern table it uses the gpos table F U C K
+                let kerning = glyph.kerning_table().get(&prev).unwrap_or(&0);
+
                 let quad = Quad::new(
-                    start.0 + (glyph.hor_side_bearing()) as f32 * size,
-                    start.1 + (glyph.y_origin() + glyph.ver_side_bearing()) as f32 * size,
+                    start.0 + (glyph.hor_side_bearing() + kerning) as f32 * size,
+                    start.1 + ((glyph.y_origin() + glyph.ver_side_bearing()) as f32 + glyph.y_min as f32) * size,
                     glyph.width() as f32 * size,
                     glyph.height() as f32 * size,
                     [
@@ -251,6 +259,7 @@ impl TextState {
                 vertices.append(&mut quad.vertices().to_vec());
                 start.0 += glyph.hor_advance() as f32 * size;
                 start.1 += glyph.ver_advance() as f32 * size;
+                prev = c;
             }
         }
 
@@ -269,7 +278,7 @@ impl TextState {
     }
 
     // Return the texture bind group
-    pub fn create_texture(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::BindGroup {
+    pub fn create_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let texture_size = wgpu::Extent3d {
             width: self.atlas.dimensions().0,
             height: self.atlas.dimensions().1,
@@ -350,7 +359,7 @@ impl TextState {
             label: Some("diffuse_bind_group"),
         });
 
-        bind_group
+        self.texture_bind = Some(bind_group);
     }
 
     pub(crate) fn pipeline(&self) -> &wgpu::RenderPipeline {

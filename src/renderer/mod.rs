@@ -106,7 +106,12 @@ impl State {
             self.size.width as f32,
             self.size.height as f32,
         );
-        let text_bind_group = text_state.create_texture(&self.device, &self.queue);
+        let text_bind_group = if let Some(text_bind_group) = text_state.texture_bind.as_ref() {
+            text_bind_group
+        } else {
+            text_state.create_texture(&self.device, &self.queue);
+            text_state.texture_bind.as_ref().unwrap()
+        };
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),

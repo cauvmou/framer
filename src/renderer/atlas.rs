@@ -8,7 +8,7 @@ use ttf_parser::GlyphId;
 
 use crate::FONT_RESOURCES;
 
-pub(crate) const SCALE_FACTOR: f64 = 1.0 / 12.0;
+pub(crate) const SCALE_FACTOR: f64 = 1.0 / 8.0;
 pub(crate) const TEXTURE_SCALE: u32 = 2048;
 
 pub struct FontAtlasGenerator {
@@ -41,7 +41,7 @@ impl FontAtlasGenerator {
     pub fn generate<'a>(&self, data: Vec<(String, &'a [char])>) -> FontAtlas {
         let mut font_glyphs = Vec::with_capacity(data.len());
         for (name, chars) in data.iter() {
-            let face = ttf_parser::Face::from_slice(
+            let face = ttf_parser::Face::parse(
                 FONT_RESOURCES
                     .read()
                     .unwrap()
@@ -52,6 +52,7 @@ impl FontAtlasGenerator {
             )
             .unwrap();
             let mut glyph_images = Vec::with_capacity(data.len());
+            let all_glyphs = chars.iter().map(|c| (*c, face.glyph_index(*c).unwrap())).collect::<Vec<(char, GlyphId)>>();
             for c in *chars {
                 let glyph_index = face.glyph_index(*c).unwrap_or(GlyphId::default());
                 let shape = face
@@ -84,7 +85,7 @@ impl FontAtlasGenerator {
                 let mtsdf = colored_shape.generate_mtsdf(
                     width.ceil() as u32,
                     height.ceil() as u32,
-                    128.0,
+                    32.0,
                     &glyph_projection,
                     &self.msdf_config,
                 );
@@ -98,6 +99,26 @@ impl FontAtlasGenerator {
                 );
 
                 let y_origin = face.glyph_y_origin(glyph_index).unwrap_or(0);
+
+                let mut kerning_table: HashMap<char, i16> = HashMap::with_capacity(all_glyphs.len());
+                if let Some(kern) = face.tables().kern {
+                    kern.subtables.into_iter().for_each(|subtable| {
+                        all_glyphs.iter().for_each(|(c, glyph)| {
+                            let kerning = subtable.glyphs_kerning(*glyph, glyph_index).unwrap_or(0);
+                            kerning_table.insert(*c, kerning);
+                        });
+                    });
+                }
+
+                if let Some(kern) = face.tables().kerx {
+                    kern.subtables.into_iter().for_each(|subtable| {
+                        all_glyphs.iter().for_each(|(c, glyph)| {
+                            let kerning = subtable.glyphs_kerning(*glyph, glyph_index).unwrap_or(0);
+                            kerning_table.insert(*c, kerning);
+                        });
+                    });
+                }
+
                 glyph_images.push((
                     Glyph {
                         name: *c,
@@ -110,6 +131,8 @@ impl FontAtlasGenerator {
                         hor_side_bearing,
                         ver_side_bearing,
                         y_origin,
+                        kerning_table,
+                        baseline_offset: 0,
                     },
                     Rgba32FImage::from(mtsdf.to_image()),
                 ));
@@ -123,7 +146,7 @@ impl FontAtlasGenerator {
                 for (glyph, _) in texture {
                     let mut name = name.to_string();
                     name.push(glyph.name);
-                    glyphs.insert(name, *glyph);
+                    glyphs.insert(name, glyph.clone());
                 }
                 glyphs
             },
@@ -143,18 +166,20 @@ impl FontAtlasGenerator {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Glyph {
-    y_min: f64,
-    y_max: f64,
-    x_min: f64,
-    x_max: f64,
+    pub(crate) y_min: f64,
+    pub(crate) y_max: f64,
+    pub(crate) x_min: f64,
+    pub(crate) x_max: f64,
     hor_advance: u16,
     ver_advance: u16,
     hor_side_bearing: i16,
     ver_side_bearing: i16,
     y_origin: i16,
     name: char,
+    kerning_table: HashMap<char, i16>,
+    baseline_offset: i16,
 }
 
 impl Glyph {
@@ -184,6 +209,14 @@ impl Glyph {
 
     pub fn y_origin(&self) -> i16 {
         self.y_origin
+    }
+
+    pub fn kerning_table(&self) -> &HashMap<char, i16> {
+        &self.kerning_table
+    }
+
+    pub fn baseline_offset(&self) -> i16 {
+        self.baseline_offset
     }
 }
 

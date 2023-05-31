@@ -29,6 +29,13 @@ lazy_static! {
                 bytes: include_bytes!("./fonts/AlegreyaSans/AlegreyaSans-Regular.ttf"),
             },
         );
+        map.insert(
+            "SourceCodePro-Regular".to_string(),
+            FontResource {
+                path: "./fonts/Source_Code_Pro/static/SourceCodePro-Regular.ttf".into(),
+                bytes: include_bytes!("./fonts/Source_Code_Pro/static/SourceCodePro-Regular.ttf"),
+            },
+        );
         RwLock::new(map)
     };
 }
@@ -50,7 +57,7 @@ pub struct Text {
 impl Text {
     pub fn new(literal: &str) -> Self {
         Self {
-            font: "Roboto-Black".into(),
+            font: "Roboto-Regular".into(),
             literal: literal.to_owned(),
         }
     }
