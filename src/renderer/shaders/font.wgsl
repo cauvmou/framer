@@ -31,7 +31,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var sd = median(msd.x, msd.y, msd.z);
     var screen_px_distance = screenPxRange(in.tex_coords)*(sd - 0.5);
     var opacity = clamp(screen_px_distance + 0.5, 0.0, 1.0);
-    return mix(vec4<f32>(0.0, 0.0, 0.0, 0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0), opacity);
+    return mix(vec4<f32>(0.0, 1.0, 0.0, 0.2), vec4<f32>(0.0, 0.0, 0.0, 1.0), opacity);
     //return vec4<f32>(msd.xyz, 1.0);
     //return vec4<f32>(opacity, opacity, opacity, 1.0);
 }

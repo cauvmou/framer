@@ -9,5 +9,5 @@ async fn main() {
         ..Default::default()
     });
 
-    window.launch(Text::new("AW")).await;
+    window.launch(Text::new("AWgx")).await;
 }

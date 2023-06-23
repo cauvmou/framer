@@ -36,6 +36,13 @@ lazy_static! {
                 bytes: include_bytes!("./fonts/Source_Code_Pro/static/SourceCodePro-Regular.ttf"),
             },
         );
+        map.insert(
+            "Amiri-Regular".to_string(),
+            FontResource {
+                path: "./fonts/Amiri/Amiri-Regular.ttf".into(),
+                bytes: include_bytes!("./fonts/Amiri/Amiri-Regular.ttf"),
+            },
+        );
         RwLock::new(map)
     };
 }

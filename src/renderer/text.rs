@@ -236,12 +236,12 @@ impl TextState {
                 let frame = self.atlas.packer().get_frame(&font).unwrap();
                 let rect = frame.frame;
 
-                // TODO: TTF does NOT use the kern table it uses the gpos table F U C K
-                let kerning = glyph.kerning_table().get(&prev).unwrap_or(&0);
+                let kerning = glyph.kerning_table.get(&prev).unwrap_or(&0);
 
+                // TODO: REWORK I should just read and then implement not the other way around (https://simoncozens.github.io/fonts-and-layout/concepts.html)
                 let quad = Quad::new(
-                    start.0 + (glyph.hor_side_bearing() + kerning) as f32 * size,
-                    start.1 + ((glyph.y_origin() + glyph.ver_side_bearing()) as f32 + glyph.y_min as f32) * size,
+                    start.0 + ((glyph.hor_side_bearing + kerning) as f32 - glyph.x_min as f32) * size,
+                    start.1 + ((glyph.y_origin + glyph.ver_side_bearing) as f32 + glyph.y_min as f32) * size,
                     glyph.width() as f32 * size,
                     glyph.height() as f32 * size,
                     [
@@ -257,8 +257,8 @@ impl TextState {
                 );
                 indices.append(&mut quad.indices((vertices.len()) as u16).to_vec());
                 vertices.append(&mut quad.vertices().to_vec());
-                start.0 += glyph.hor_advance() as f32 * size;
-                start.1 += glyph.ver_advance() as f32 * size;
+                start.0 += glyph.hor_advance as f32 * size;
+                start.1 += glyph.ver_advance as f32 * size;
                 prev = c;
             }
         }

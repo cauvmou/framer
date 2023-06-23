@@ -51,6 +51,7 @@ impl FontAtlasGenerator {
                 0,
             )
             .unwrap();
+
             let mut glyph_images = Vec::with_capacity(data.len());
             let all_glyphs = chars.iter().map(|c| (*c, face.glyph_index(*c).unwrap())).collect::<Vec<(char, GlyphId)>>();
             for c in *chars {
@@ -172,14 +173,14 @@ pub struct Glyph {
     pub(crate) y_max: f64,
     pub(crate) x_min: f64,
     pub(crate) x_max: f64,
-    hor_advance: u16,
-    ver_advance: u16,
-    hor_side_bearing: i16,
-    ver_side_bearing: i16,
-    y_origin: i16,
-    name: char,
-    kerning_table: HashMap<char, i16>,
-    baseline_offset: i16,
+    pub(crate) hor_advance: u16,
+    pub(crate) ver_advance: u16,
+    pub(crate) hor_side_bearing: i16,
+    pub(crate) ver_side_bearing: i16,
+    pub(crate) y_origin: i16,
+    pub(crate) name: char,
+    pub(crate) kerning_table: HashMap<char, i16>,
+    pub(crate) baseline_offset: i16,
 }
 
 impl Glyph {
@@ -189,34 +190,6 @@ impl Glyph {
 
     pub fn height(&self) -> f64 {
         self.y_max - self.y_min
-    }
-
-    pub fn hor_advance(&self) -> u16 {
-        self.hor_advance
-    }
-
-    pub fn ver_advance(&self) -> u16 {
-        self.ver_advance
-    }
-
-    pub fn hor_side_bearing(&self) -> i16 {
-        self.hor_side_bearing
-    }
-
-    pub fn ver_side_bearing(&self) -> i16 {
-        self.ver_side_bearing
-    }
-
-    pub fn y_origin(&self) -> i16 {
-        self.y_origin
-    }
-
-    pub fn kerning_table(&self) -> &HashMap<char, i16> {
-        &self.kerning_table
-    }
-
-    pub fn baseline_offset(&self) -> i16 {
-        self.baseline_offset
     }
 }
 
