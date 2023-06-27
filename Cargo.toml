@@ -17,3 +17,6 @@ image = "0.24.6"
 texture_packer = "0.25.0"
 lazy_static = "1.4.0"
 bytemuck = { version = "1.13.1", features = ["derive"]}
+harfbuzz = "0.4.0"
+msdfgen-sys = "0.2.1"
+threadpool = "1.8.1"

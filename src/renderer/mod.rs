@@ -1,8 +1,7 @@
 use winit::window::Window;
 
-use self::text::TextState;
-pub mod atlas;
-pub mod text;
+pub(crate) mod text;
+pub(crate) mod atlas;
 
 const BACKENDS: Option<wgpu::Backends> = wgpu::Backends::from_bits(
     wgpu::Backends::VULKAN.bits() | wgpu::Backends::GL.bits() | wgpu::Backends::METAL.bits(),
@@ -91,7 +90,7 @@ impl State {
         }
     }
 
-    pub fn render(&mut self, text_state: &mut TextState) -> Result<(), wgpu::SurfaceError> {
+    pub fn render<F: FnOnce(&mut wgpu::RenderPass)>(&mut self, callback: F) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -101,17 +100,6 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
-        let (vertex_buffer, index_buffer, num_indices) = text_state.create_buffers(
-            &self.device,
-            self.size.width as f32,
-            self.size.height as f32,
-        );
-        let text_bind_group = if let Some(text_bind_group) = text_state.texture_bind.as_ref() {
-            text_bind_group
-        } else {
-            text_state.create_texture(&self.device, &self.queue);
-            text_state.texture_bind.as_ref().unwrap()
-        };
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -130,12 +118,7 @@ impl State {
                 })],
                 depth_stencil_attachment: None,
             });
-
-            render_pass.set_pipeline(&text_state.pipeline());
-            render_pass.set_bind_group(0, &text_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..num_indices, 0, 0..1);
+            callback(&mut render_pass)
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
