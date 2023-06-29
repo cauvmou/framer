@@ -1,7 +1,9 @@
 use winit::window::Window;
 
-pub(crate) mod text;
+use self::text::TextState;
+
 pub(crate) mod atlas;
+pub(crate) mod text;
 
 const BACKENDS: Option<wgpu::Backends> = wgpu::Backends::from_bits(
     wgpu::Backends::VULKAN.bits() | wgpu::Backends::GL.bits() | wgpu::Backends::METAL.bits(),
@@ -90,7 +92,10 @@ impl State {
         }
     }
 
-    pub fn render<F: FnOnce(&mut wgpu::RenderPass)>(&mut self, callback: F) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(
+        &mut self,
+        text_state: &TextState,
+    ) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -100,6 +105,8 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+        let textures = text_state.create_texture_binds(&self.device, &self.queue);
+        let buffers = text_state.create_buffers(&self.device, self.size.width, self.size.height);
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -118,12 +125,120 @@ impl State {
                 })],
                 depth_stencil_attachment: None,
             });
-            callback(&mut render_pass)
+
+            render_pass.set_pipeline(&text_state.pipeline);
+            for font in textures.keys().into_iter() {
+                render_pass.set_bind_group(0, textures.get(font).unwrap(), &[]);
+                let (vertex_buffer, index_buffer, num_indices) = buffers.get(font).unwrap();
+                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..*num_indices, 0, 0..1);
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         Ok(())
+    }
+}
+
+pub struct UVRect {
+    u: f32,
+    v: f32,
+    w: f32,
+    h: f32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 2],
+    uv: [f32; 2],
+}
+
+impl Vertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
+        }
+    }
+}
+
+// TODO: Hölle
+#[derive(Debug, Clone, Copy)]
+struct Quad {
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    uv: [f32; 2],
+    xy: [f32; 2],
+}
+
+impl Quad {
+    pub fn new(
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        uv: [f32; 2],
+        xy: [f32; 2],
+        sw: f32,
+        sh: f32,
+    ) -> Self {
+        Self {
+            x1: (2.0 * x / sw) - 1.0,
+            y1: (2.0 * y / sh) - 1.0,
+            x2: (2.0 * (x + w) / sw) - 1.0,
+            y2: (2.0 * (y + h) / sh) - 1.0,
+            uv,
+            xy,
+        }
+    }
+
+    pub fn vertices(&self) -> [Vertex; 4] {
+        [
+            Vertex {
+                position: [self.x1, self.y1],
+                uv: [self.uv[0], self.xy[1]],
+            },
+            Vertex {
+                position: [self.x2, self.y1],
+                uv: [self.xy[0], self.xy[1]],
+            },
+            Vertex {
+                position: [self.x2, self.y2],
+                uv: [self.xy[0], self.uv[1]],
+            },
+            Vertex {
+                position: [self.x1, self.y2],
+                uv: [self.uv[0], self.uv[1]],
+            },
+        ]
+    }
+
+    pub fn indices(&self, starting: u16) -> [u16; 6] {
+        [
+            starting + 0,
+            starting + 1,
+            starting + 2,
+            starting + 0,
+            starting + 2,
+            starting + 3,
+        ]
     }
 }

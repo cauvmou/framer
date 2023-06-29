@@ -32,7 +32,11 @@ impl<'a> Application<'a> {
         }
         window.set_title(self.window_config.title);
         let mut render_state = renderer::State::new(window).await;
-        let mut text_state = renderer::text::TextState::new();
+        let mut text_state = renderer::text::TextState::new(&render_state);
+
+        text_state.draw(30, 30, "agb", Arc::new(font::Font::DEFAULT));
+        //text_state.draw(30, 30, "ا تشوبها عواقب أليمة أو آخر أراد أن يتجنب الألم الذي ربما تنجم عنه بعض المتعة ؟ علي الجانب الآخر نشجب ونستنكر هؤلاء الرجال المفتونون بنشوة اللحظة الهائمون في رغباتهم فلا يدركون ما يعقبها من الألم والأسي المحتم، واللوم كذلك يشمل هؤلاء الذين أخفقوا في واجباتهم نتيجة لضعف إرادتهم فيتساوي مع هؤلاء الذين يتجنبون وينأون عن تحمل الكدح والألم . من ", Arc::new(font::Font::CAIRO));
+        //text_state.draw(30, 240, "a b", Arc::new(font::Font::MONOSPACE));
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
@@ -62,9 +66,7 @@ impl<'a> Application<'a> {
                     _ => {}
                 },
                 Event::RedrawRequested(window_id) if window_id == render_state.window().id() => {
-                    match render_state.render(|render_pass| {
-                        text_state.render(render_pass);
-                    }) {
+                    match render_state.render(&text_state) {
                         Ok(_) => {}
                         // Reconfigure the surface if lost
                         Err(wgpu::SurfaceError::Lost) => render_state.resize(render_state.size),
@@ -75,7 +77,6 @@ impl<'a> Application<'a> {
                     }
                 }
                 Event::MainEventsCleared => {
-                    text_state.draw(30, 30, "Hello World!", Arc::new(font::Font::DEFAULT));
                     render_state.window().request_redraw();
                 }
                 _ => {}
