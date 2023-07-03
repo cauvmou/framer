@@ -15,7 +15,7 @@ impl Font {
         weight: Weight::Medium,
         monospace: false,
         src: Source::Builtin,
-        data: include_bytes!("./fonts/Roboto/Roboto-Regular.ttf"),
+        data: include_bytes!("./fonts/DejaVuSerif.ttf"),
     };
 
     pub const MONOSPACE: Font = Font {

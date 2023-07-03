@@ -16,6 +16,7 @@ pub(crate) struct State {
     config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
     window: Window,
+    color_buffer: wgpu::Texture,
 }
 
 impl State {
@@ -69,6 +70,8 @@ impl State {
         };
         surface.configure(&device, &config);
 
+        let color_buffer = Self::create_color_buffer(&device, size.width as f64, size.height as f64, 1.0, 4, surface_format);
+
         Self {
             window,
             surface,
@@ -76,6 +79,7 @@ impl State {
             queue,
             config,
             size,
+            color_buffer,
         }
     }
 
@@ -89,6 +93,8 @@ impl State {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.color_buffer.destroy();
+            self.color_buffer = Self::create_color_buffer(&self.device, new_size.width as f64, new_size.height as f64, 1.0, 4, self.config.format);
         }
     }
 
@@ -100,6 +106,7 @@ impl State {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        let color_view = &self.color_buffer.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -111,8 +118,8 @@ impl State {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
+                    view: &color_view,
+                    resolve_target: Some(&view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: 1.0,
@@ -140,6 +147,30 @@ impl State {
         output.present();
 
         Ok(())
+    }
+
+    fn create_color_buffer(
+        device: &wgpu::Device,
+        width: f64,
+        height: f64,
+        pixel_ratio: f64,
+        sample_count: u32,
+        format: wgpu::TextureFormat,
+    ) -> wgpu::Texture {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: (width * pixel_ratio) as u32,
+                height: (height * pixel_ratio) as u32,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: sample_count,
+            dimension: wgpu::TextureDimension::D2,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            view_formats: &[],
+        })
     }
 }
 

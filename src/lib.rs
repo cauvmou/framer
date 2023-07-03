@@ -34,9 +34,10 @@ impl<'a> Application<'a> {
         let mut render_state = renderer::State::new(window).await;
         let mut text_state = renderer::text::TextState::new(&render_state);
 
-        text_state.draw(30, 30, "agb", Arc::new(font::Font::DEFAULT));
-        //text_state.draw(30, 30, "ا تشوبها عواقب أليمة أو آخر أراد أن يتجنب الألم الذي ربما تنجم عنه بعض المتعة ؟ علي الجانب الآخر نشجب ونستنكر هؤلاء الرجال المفتونون بنشوة اللحظة الهائمون في رغباتهم فلا يدركون ما يعقبها من الألم والأسي المحتم، واللوم كذلك يشمل هؤلاء الذين أخفقوا في واجباتهم نتيجة لضعف إرادتهم فيتساوي مع هؤلاء الذين يتجنبون وينأون عن تحمل الكدح والألم . من ", Arc::new(font::Font::CAIRO));
-        //text_state.draw(30, 240, "a b", Arc::new(font::Font::MONOSPACE));
+        text_state.draw(30, 50, "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.", Arc::new(font::Font::DEFAULT));
+        //text_state.draw(30, 600, "“Hello, World!” gg++-- ÜÜÜ###", Arc::new(font::Font::DEFAULT));
+        //text_state.draw(30, 30, "ن بنشوة اللحظة الهائمون في رغباتهم فلا يدركون ما يعقبها من الألم و", Arc::new(font::Font::CAIRO));
+        //text_state.draw(30, 600, "\"Hello, World!\" ++--gpq", Arc::new(font::Font::MONOSPACE));
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;

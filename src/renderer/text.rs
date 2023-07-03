@@ -11,6 +11,7 @@ use crate::font::{self, Font};
 
 use super::{atlas::FontAtlas, Vertex, Quad};
 
+#[derive(Debug)]
 pub(crate) struct Glyph {
     glyph_id: GlyphId,
     x_advance: f32,
@@ -19,6 +20,7 @@ pub(crate) struct Glyph {
     y_offset: f32,
 }
 
+#[derive(Debug)]
 pub(crate) struct GlyphSequence {
     glyphs: Vec<Glyph>,
     x: u32,
@@ -110,7 +112,7 @@ impl TextState {
                 },
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState {
-                    count: 1,
+                    count: 4,
                     mask: !0,
                     alpha_to_coverage_enabled: true,
                 },
@@ -131,8 +133,9 @@ impl TextState {
         let mut buffer = harfbuzz::Buffer::with(text);
 
         buffer.guess_segment_properties();
+
         let glyph_sequence = GlyphSequence {
-            glyphs: Self::shape(blob, buffer),
+            glyphs: Self::shape(blob, buffer, Some(&[Self::KERN_FEATURE])),
             x,
             y,
             font: font.clone(),
@@ -162,14 +165,43 @@ impl TextState {
         self.font_to_atlas.insert(font.clone(), atlas);
     }
 
-    fn shape(blob: harfbuzz::Blob, buffer: harfbuzz::Buffer) -> Vec<Glyph> {
+    const KERN_FEATURE: harfbuzz::sys::hb_feature_t = harfbuzz::sys::hb_feature_t {
+        tag: 0x6b65726e,
+        value: 1,
+        start: 0,
+        end: u32::MAX,
+    };
+    const LIGA_FEATURE: harfbuzz::sys::hb_feature_t = harfbuzz::sys::hb_feature_t {
+        tag: 0x6c696761,
+        value: 1,
+        start: 0,
+        end: u32::MAX,
+    };
+    const CLIG_FEATURE: harfbuzz::sys::hb_feature_t = harfbuzz::sys::hb_feature_t {
+        tag: 0x636c6967,
+        value: 1,
+        start: 0,
+        end: u32::MAX,
+    };
+
+    fn shape(blob: harfbuzz::Blob, buffer: harfbuzz::Buffer, features: Option<&[harfbuzz::sys::hb_feature_t]>) -> Vec<Glyph> {
         unsafe {
-            harfbuzz::sys::hb_shape(
-                harfbuzz::sys::hb_font_create(harfbuzz::sys::hb_face_create(blob.as_raw(), 0)),
-                buffer.as_ptr(),
-                std::ptr::null(),
-                0,
-            );
+            let font = harfbuzz::sys::hb_font_create(harfbuzz::sys::hb_face_create(blob.as_raw(), 0));
+            if let Some(features) = features {
+                harfbuzz::sys::hb_shape(
+                    font,
+                    buffer.as_ptr(),
+                    features.as_ptr(),
+                    features.len() as u32,
+                );
+            } else {
+                harfbuzz::sys::hb_shape(
+                    font,
+                    buffer.as_ptr(),
+                    std::ptr::null(),
+                    0,
+                );
+            }
             let mut glyph_count: u32 = 0;
             let glyph_info = harfbuzz::sys::hb_buffer_get_glyph_infos(
                 buffer.as_ptr(),
@@ -294,30 +326,35 @@ impl TextState {
         let mut vertices: Vec<Vertex> = Vec::new();
         let mut indices: Vec<u16> = Vec::new();
 
-        let scale = 0.3;
+        let scale = 0.015;
 
         if let Ok(face) = ttf_parser::Face::parse(font.data, 0) {
+
+            let whitespace = face.glyph_index(' ').unwrap();
 
             for sequence in glyph_sequences {
                 let mut cursor = (sequence.x as f32, sequence.y as f32);
                 for glyph in &sequence.glyphs {
-                    let bound = face.glyph_bounding_box(glyph.glyph_id).unwrap_or(face.glyph_bounding_box(GlyphId::default()).unwrap());
-                    let uv = atlas.map.get(&glyph.glyph_id).unwrap();
-                    println!("{}", glyph.y_offset);
-                    let quad = Quad::new(
-                        cursor.0 + glyph.x_offset * scale,
-                        cursor.1 + glyph.y_offset * scale,
-                        (bound.width()) as f32 * scale,
-                        (bound.height()) as f32 * scale,
-                        [uv.u, uv.v],
-                        [uv.u + uv.w, uv.v + uv.h],
-                        screen_width as f32,
-                        screen_height as f32,
-                    );
+                    if glyph.glyph_id != whitespace {
+                        let bound = face.glyph_bounding_box(glyph.glyph_id).unwrap_or(face.glyph_bounding_box(GlyphId::default()).unwrap());
+                        let bearing_x = face.glyph_hor_side_bearing(glyph.glyph_id).unwrap_or(face.glyph_hor_side_bearing(GlyphId::default()).unwrap_or(0)) as f32;
+                        let bearing_y = face.glyph_ver_side_bearing(glyph.glyph_id).unwrap_or(face.glyph_ver_side_bearing(GlyphId::default()).unwrap_or(0)) as f32;
+                        let uv = atlas.map.get(&glyph.glyph_id).unwrap();
+                        let quad = Quad::new(
+                            cursor.0 + (glyph.x_offset + bearing_x) * scale,
+                            cursor.1 + (glyph.y_offset + bearing_y + bound.y_min as f32) * scale,
+                            (bound.width()) as f32 * scale,
+                            (bound.height()) as f32 * scale,
+                            [uv.u, uv.v],
+                            [uv.u + uv.w, uv.v + uv.h],
+                            screen_width as f32,
+                            screen_height as f32,
+                        );
+                        indices.append(&mut quad.indices((vertices.len()) as u16).to_vec());
+                        vertices.append(&mut quad.vertices().to_vec());
+                    }
                     cursor.0 += glyph.x_advance * scale;
                     cursor.1 += glyph.y_advance * scale;
-                    indices.append(&mut quad.indices((vertices.len()) as u16).to_vec());
-                    vertices.append(&mut quad.vertices().to_vec());
                 }
             }
         }
