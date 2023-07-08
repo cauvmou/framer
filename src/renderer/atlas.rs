@@ -1,245 +1,158 @@
-// This unholy garbage should have never seen the light of day.
+use std::{
+    collections::HashMap,
+    sync::{mpsc, Arc},
+};
 
-use image::{DynamicImage, ImageBuffer, Rgba, Rgba32FImage};
-use msdf::{GlyphLoader, MSDFConfig, Projection, SDFTrait};
-use std::{collections::HashMap, marker::PhantomData};
-use texture_packer::{exporter::Exporter, TexturePacker, TexturePackerConfig};
+use image::ImageBuffer;
+use msdf::{GlyphLoader, SDFTrait};
+use texture_packer::{
+    exporter::{Exporter},
+    TexturePacker,
+};
+use threadpool::ThreadPool;
 use ttf_parser::GlyphId;
 
-use crate::FONT_RESOURCES;
+use crate::{font, renderer::UVRect};
 
-pub(crate) const SCALE_FACTOR: f64 = 1.0 / 8.0;
-pub(crate) const TEXTURE_SCALE: u32 = 2048;
 
-pub struct FontAtlasGenerator {
-    msdf_config: MSDFConfig,
-    packer_config: TexturePackerConfig,
+
+pub(crate) struct FontAtlas {
+    pub map: HashMap<GlyphId, UVRect>,
+    pub texture: image::RgbaImage,
 }
 
-impl FontAtlasGenerator {
-    pub fn new() -> Self {
-        let msdf_config = msdf::MSDFConfig::default();
-        let packer_config = TexturePackerConfig {
-            max_width: TEXTURE_SCALE,
-            max_height: TEXTURE_SCALE,
+impl FontAtlas {
+
+    pub(crate) const SCALE_FACTOR: f64 = 1.0 / 8.0;
+    pub(crate) const TEXTURE_SCALE: u32 = 4096;
+    const THREAD_COUNT: usize = 8;
+
+    // TODO: Optimize
+    pub fn new(
+        ids: Vec<GlyphId>,
+        font: Arc<font::Font>,
+    ) -> Result<Self, ttf_parser::FaceParsingError> {
+        let pool = ThreadPool::new(Self::THREAD_COUNT);
+        let msdf_config = Arc::new(msdf::MSDFConfig {
+            ..Default::default()
+        });
+        let packer_config = texture_packer::TexturePackerConfig {
+            max_width: Self::TEXTURE_SCALE,
+            max_height: Self::TEXTURE_SCALE,
             allow_rotation: false,
             border_padding: 0,
             texture_padding: 0,
             ..Default::default()
         };
-        Self {
-            msdf_config,
-            packer_config,
+    
+        let face = Arc::new(ttf_parser::Face::parse(font.data, 0)?);
+
+        let (tx, rx) = mpsc::channel();
+        
+        for glyph_id in ids {
+            let face = face.clone();
+            let msdf_config = msdf_config.clone();
+            let tx = tx.clone();
+            pool.execute(move || {
+                let shape = face.load_shape(glyph_id).unwrap_or(face.load_shape(GlyphId::default()).unwrap());
+                    let shape = shape.color_edges_ink_trap(3.0);
+                    let ttf_parser::Rect {
+                        x_min,
+                        y_min,
+                        x_max,
+                        y_max,
+                    } = face.glyph_bounding_box(glyph_id).unwrap_or(
+                        face.glyph_bounding_box(ttf_parser::GlyphId::default())
+                            .expect("THIS IS THE POINT OF DEATH"),
+                    );
+                    let glyph_projection = msdf::Projection {
+                        scale: mint::Vector2 {
+                            x: Self::SCALE_FACTOR,
+                            y: Self::SCALE_FACTOR,
+                        },
+                        translation: mint::Vector2 {
+                            x: x_min as f64 * -1.0,
+                            y: y_min as f64 * -1.0,
+                        },
+                    };
+                    let img = shape
+                        .generate_msdf(
+                            ((x_max - x_min) as f64 * Self::SCALE_FACTOR).ceil() as u32,
+                            ((y_max - y_min) as f64 * Self::SCALE_FACTOR).ceil() as u32,
+                            64.0,
+                            &glyph_projection,
+                            &msdf_config,
+                        )
+                        .to_image();
+    
+                    tx.send((glyph_id, img)).expect(":.(");
+            });
         }
-    }
+        pool.join();
+        drop(tx);
 
-    pub fn with_msdf_config(mut self, config: MSDFConfig) -> Self {
-        self.msdf_config = config;
-        self
-    }
-
-    pub fn generate<'a>(&self, data: Vec<(String, &'a [char])>) -> FontAtlas {
-        let mut font_glyphs = Vec::with_capacity(data.len());
-        for (name, chars) in data.iter() {
-            let face = ttf_parser::Face::parse(
-                FONT_RESOURCES
-                    .read()
-                    .unwrap()
-                    .get(name)
-                    .unwrap_or(&crate::FontResource::default())
-                    .bytes,
-                0,
-            )
-            .unwrap();
-
-            let mut glyph_images = Vec::with_capacity(data.len());
-            let all_glyphs = chars.iter().map(|c| (*c, face.glyph_index(*c).unwrap())).collect::<Vec<(char, GlyphId)>>();
-            for c in *chars {
-                let glyph_index = face.glyph_index(*c).unwrap_or(GlyphId::default());
-                let shape = face
-                    .load_shape(glyph_index)
-                    .unwrap_or(face.load_shape(GlyphId::default()).unwrap());
-
-                let ttf_parser::Rect {
-                    x_min,
-                    y_min,
-                    x_max,
-                    y_max,
-                } = face
-                    .glyph_bounding_box(glyph_index)
-                    .unwrap_or(face.glyph_bounding_box(GlyphId::default()).unwrap());
-                let width = (x_max - x_min) as f64 * SCALE_FACTOR;
-                let height = (y_max - y_min) as f64 * SCALE_FACTOR;
-
-                let glyph_projection = Projection {
-                    scale: mint::Vector2 {
-                        x: SCALE_FACTOR,
-                        y: SCALE_FACTOR,
-                    },
-                    translation: mint::Vector2 {
-                        x: x_min as f64 * -1.0,
-                        y: y_min as f64 * -1.0,
-                    },
-                };
-
-                let colored_shape = shape.color_edges_ink_trap(3.0);
-                let mtsdf = colored_shape.generate_mtsdf(
-                    width.ceil() as u32,
-                    height.ceil() as u32,
-                    32.0,
-                    &glyph_projection,
-                    &self.msdf_config,
-                );
-                let (hor_advance, ver_advance) = (
-                    face.glyph_hor_advance(glyph_index).unwrap_or(0),
-                    face.glyph_ver_advance(glyph_index).unwrap_or(0),
-                );
-                let (hor_side_bearing, ver_side_bearing) = (
-                    face.glyph_hor_side_bearing(glyph_index).unwrap_or(0),
-                    face.glyph_ver_side_bearing(glyph_index).unwrap_or(0),
-                );
-
-                let y_origin = face.glyph_y_origin(glyph_index).unwrap_or(0);
-
-                let mut kerning_table: HashMap<char, i16> = HashMap::with_capacity(all_glyphs.len());
-                if let Some(kern) = face.tables().kern {
-                    kern.subtables.into_iter().for_each(|subtable| {
-                        all_glyphs.iter().for_each(|(c, glyph)| {
-                            let kerning = subtable.glyphs_kerning(*glyph, glyph_index).unwrap_or(0);
-                            kerning_table.insert(*c, kerning);
-                        });
-                    });
-                }
-
-                if let Some(kern) = face.tables().kerx {
-                    kern.subtables.into_iter().for_each(|subtable| {
-                        all_glyphs.iter().for_each(|(c, glyph)| {
-                            let kerning = subtable.glyphs_kerning(*glyph, glyph_index).unwrap_or(0);
-                            kerning_table.insert(*c, kerning);
-                        });
-                    });
-                }
-
-                glyph_images.push((
-                    Glyph {
-                        name: *c,
-                        y_min: y_min.into(),
-                        y_max: y_max.into(),
-                        x_min: x_min.into(),
-                        x_max: x_max.into(),
-                        hor_advance,
-                        ver_advance,
-                        hor_side_bearing,
-                        ver_side_bearing,
-                        y_origin,
-                        kerning_table,
-                        baseline_offset: 0,
-                    },
-                    Rgba32FImage::from(mtsdf.to_image()),
-                ));
-            }
-            font_glyphs.push((name.clone(), glyph_images));
-        }
-        let mut packer = TexturePacker::new_skyline(self.packer_config);
-        let glyphs: HashMap<String, Glyph> = font_glyphs.iter().fold(
-            HashMap::with_capacity(font_glyphs.len()),
-            |mut glyphs, (name, texture)| {
-                for (glyph, _) in texture {
-                    let mut name = name.to_string();
-                    name.push(glyph.name);
-                    glyphs.insert(name, glyph.clone());
-                }
-                glyphs
-            },
-        );
-        while let Some((name, texture)) = font_glyphs.pop() {
-            for (glyph, texture) in texture {
-                let mut name = name.to_string();
-                name.push(glyph.name);
-                packer.pack_own(name, texture).unwrap();
+        let images = rx.iter().collect::<Vec<_>>();
+        let mut packer = TexturePacker::new_skyline(packer_config);
+        for (key, texture) in images {
+            match packer.pack_own(key, texture) {
+                Err(err) => eprintln!(
+                    "Texture too large for atlas.\nErr -> {err:?}"
+                ),
+                _ => (),
             }
         }
-        FontAtlas {
-            texture: ImageExporterF32S8::export(&packer).unwrap_or(ImageBuffer::default()),
-            packer,
-            glyphs,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Glyph {
-    pub(crate) y_min: f64,
-    pub(crate) y_max: f64,
-    pub(crate) x_min: f64,
-    pub(crate) x_max: f64,
-    pub(crate) hor_advance: u16,
-    pub(crate) ver_advance: u16,
-    pub(crate) hor_side_bearing: i16,
-    pub(crate) ver_side_bearing: i16,
-    pub(crate) y_origin: i16,
-    pub(crate) name: char,
-    pub(crate) kerning_table: HashMap<char, i16>,
-    pub(crate) baseline_offset: i16,
-}
-
-impl Glyph {
-    pub fn width(&self) -> f64 {
-        self.x_max - self.x_min
-    }
-
-    pub fn height(&self) -> f64 {
-        self.y_max - self.y_min
-    }
-}
-
-pub struct FontAtlas {
-    texture: image::RgbaImage,
-    packer: TexturePacker<'static, ImageBuffer<Rgba<f32>, Vec<f32>>, String>,
-    glyphs: HashMap<String, Glyph>,
-}
-
-impl FontAtlas {
-    pub fn texture(&self) -> &image::RgbaImage {
-        &self.texture
-    }
-
-    pub fn glyphs(&self) -> &HashMap<String, Glyph> {
-        &self.glyphs
-    }
-
-    pub fn packer(&self) -> &TexturePacker<'static, ImageBuffer<Rgba<f32>, Vec<f32>>, String> {
-        &self.packer
+        
+        let texture = ImageExporterF32S8::export(&packer).unwrap_or(image::ImageBuffer::default());
+    
+        let map: HashMap<GlyphId, UVRect> = packer
+            .get_frames()
+            .iter()
+            .map(|(key, val)| {
+                (key.clone(), {
+                    let texture_packer::Rect { x, y, w, h } = val.frame;
+    
+                    UVRect {
+                        u: x as f32 / texture.width() as f32,
+                        v: y as f32 / texture.height() as f32,
+                        w: w as f32 / texture.width() as f32,
+                        h: h as f32 / texture.height() as f32,
+                    }
+                })
+            })
+            .collect();
+        Ok(Self {
+            map,
+            texture,
+        })
     }
 
     pub fn desc<'a>() -> wgpu::TextureDescriptor<'a> {
         wgpu::TextureDescriptor {
             label: Some("Font Atlas"),
             size: wgpu::Extent3d {
-                width: TEXTURE_SCALE,
-                height: TEXTURE_SCALE,
+                width: Self::TEXTURE_SCALE,
+                height: Self::TEXTURE_SCALE,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
-            dimension: wgpu::TextureDimension::D3,
+            dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba32Float,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         }
     }
-
-    pub fn dimensions(&self) -> (u32, u32) {
-        self.texture.dimensions()
-    }
 }
 
-struct ImageExporterF32S8<T: texture_packer::texture::Texture<Pixel = image::Rgba<f32>>> {
-    t: PhantomData<T>,
+
+
+struct ImageExporterF32S8A<T: texture_packer::texture::Texture<Pixel = image::Rgba<f32>>> {
+    t: std::marker::PhantomData<T>,
 }
 
-impl<T: texture_packer::texture::Texture<Pixel = image::Rgba<f32>>> Exporter<T>
-    for ImageExporterF32S8<T>
+ 
+impl<T: texture_packer::texture::Texture<Pixel = image::Rgba<f32>>>
+    texture_packer::exporter::Exporter<T> for ImageExporterF32S8A<T>
 {
     type Output = image::RgbaImage;
 
@@ -253,6 +166,7 @@ impl<T: texture_packer::texture::Texture<Pixel = image::Rgba<f32>>> Exporter<T>
 
         let mut pixels = Vec::with_capacity((width * height * 4) as usize);
 
+        // TODO: Optimize, this shit is slow af but this fucking texture packer lib seems not to support any other methods. I present the Uga-Buga-Copy method
         for row in 0..height {
             for col in 0..width {
                 if let Some(pixel) = texture.get(col, row) {
@@ -270,9 +184,56 @@ impl<T: texture_packer::texture::Texture<Pixel = image::Rgba<f32>>> Exporter<T>
         }
 
         if let Some(image_buffer) =
-            ImageBuffer::<Rgba<f32>, Vec<f32>>::from_raw(width, height, pixels)
+            image::ImageBuffer::<image::Rgba<f32>, Vec<f32>>::from_raw(width, height, pixels)
         {
-            Ok(DynamicImage::ImageRgba32F(image_buffer).to_rgba8())
+            Ok(image::DynamicImage::ImageRgba32F(image_buffer).to_rgba8())
+        } else {
+            Err("Can't export texture".to_string())
+        }
+    }
+}
+
+struct ImageExporterF32S8<T: texture_packer::texture::Texture<Pixel = image::Rgb<f32>>> {
+    t: std::marker::PhantomData<T>,
+}
+
+ 
+impl<T: texture_packer::texture::Texture<Pixel = image::Rgb<f32>>>
+    texture_packer::exporter::Exporter<T> for ImageExporterF32S8<T>
+{
+    type Output = image::RgbaImage;
+
+    fn export(texture: &T) -> texture_packer::exporter::ExportResult<Self::Output> {
+        let width = texture.width();
+        let height = texture.height();
+
+        if width == 0 || height == 0 {
+            return Err("Width or height of this texture is zero".to_string());
+        }
+
+        let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+
+        // TODO: Optimize, this shit is slow af but this fucking texture packer lib seems not to support any other methods. I present the Uga-Buga-Copy method
+        for row in 0..height {
+            for col in 0..width {
+                if let Some(pixel) = texture.get(col, row) {
+                    pixels.push(pixel[0]);
+                    pixels.push(pixel[1]);
+                    pixels.push(pixel[2]);
+                    pixels.push(1.0);
+                } else {
+                    pixels.push(0.0);
+                    pixels.push(0.0);
+                    pixels.push(0.0);
+                    pixels.push(1.0);
+                }
+            }
+        }
+
+        if let Some(image_buffer) =
+            image::ImageBuffer::<image::Rgba<f32>, Vec<f32>>::from_raw(width, height, pixels)
+        {
+            Ok(image::DynamicImage::ImageRgba32F(image_buffer).to_rgba8())
         } else {
             Err("Can't export texture".to_string())
         }
