@@ -1,106 +1,97 @@
-use std::sync::Arc;
+use error::FramerError;
 
 use winit::{
-    dpi::PhysicalSize,
-    error::OsError,
-    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::Window,
+    window::WindowBuilder,
 };
 
-pub mod font;
-mod renderer;
+pub mod component;
+pub mod error;
+pub mod layout;
+pub mod render;
+pub(crate) mod util;
 
-#[derive(Default, Debug, Clone)]
-pub struct Application<'a> {
-    pub window_config: WindowConfig<'a>,
-}
+pub struct FramerApplication {}
 
-impl<'a> Application<'a> {
-    pub async fn launch(self) -> Result<(), OsError> {
+impl FramerApplication {
+    pub fn new(_config: &FramerConfig) -> Self {
+        Self {}
+    }
+
+    pub fn launch<F, R>(self, _mount: F) -> Result<(), FramerError>
+    where
+        F: FnOnce() -> R + 'static,
+        R: std::any::Any,
+    {
         let event_loop = EventLoop::new();
-        let window = Window::new(&event_loop)?;
-        window.set_inner_size(PhysicalSize::new(
-            self.window_config.size.0,
-            self.window_config.size.1,
-        ));
-        if let Some(min) = self.window_config.min_size {
-            window.set_min_inner_size(Some(PhysicalSize::new(min.0, min.1)))
-        }
-        if let Some(max) = self.window_config.max_size {
-            window.set_min_inner_size(Some(PhysicalSize::new(max.0, max.1)))
-        }
-        window.set_title(self.window_config.title);
-        let mut render_state = renderer::State::new(window).await;
-        let mut text_state = renderer::text::TextState::new(&render_state);
+        let window = WindowBuilder::new()
+            .with_decorations(false)
+            .build(&event_loop)?;
 
-        text_state.draw(30, 50, "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.", Arc::new(font::Font::DEFAULT));
-        //text_state.draw(30, 600, "“Hello, World!” gg++-- ÜÜÜ###", Arc::new(font::Font::DEFAULT));
-        //text_state.draw(30, 30, "ن بنشوة اللحظة الهائمون في رغباتهم فلا يدركون ما يعقبها من الألم و", Arc::new(font::Font::CAIRO));
-        //text_state.draw(30, 600, "\"Hello, World!\" ++--gpq", Arc::new(font::Font::MONOSPACE));
-
+        let mut cursor_in_window = false;
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
-
             match event {
-                Event::WindowEvent {
-                    ref event,
-                    window_id,
-                } if window_id == render_state.window().id() => match event {
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                state: ElementState::Pressed,
-                                virtual_keycode: Some(VirtualKeyCode::Escape),
-                                ..
-                            },
-                        ..
-                    } => *control_flow = ControlFlow::Exit,
-                    WindowEvent::Resized(physical_size) => {
-                        render_state.resize(*physical_size);
-                    }
-                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        // new_inner_size is &&mut so we have to dereference it twice
-                        render_state.resize(**new_inner_size);
-                    }
-                    _ => {}
-                },
-                Event::RedrawRequested(window_id) if window_id == render_state.window().id() => {
-                    match render_state.render(&text_state) {
-                        Ok(_) => {}
-                        // Reconfigure the surface if lost
-                        Err(wgpu::SurfaceError::Lost) => render_state.resize(render_state.size),
-                        // The system is out of memory, we should probably quit
-                        Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                        // All other errors (Outdated, Timeout) should be resolved by the next frame
-                        Err(e) => eprintln!("{:?}", e),
+                winit::event::Event::WindowEvent { window_id, event }
+                    if window_id == window.id() =>
+                {
+                    match event {
+                        winit::event::WindowEvent::ReceivedCharacter(c) => {
+                            println!("GOT: {c}");
+                        }
+                        winit::event::WindowEvent::CursorEntered { device_id: _ } => {
+                            cursor_in_window = true
+                        }
+                        winit::event::WindowEvent::CursorLeft { device_id: _ } => {
+                            cursor_in_window = false
+                        }
+                        winit::event::WindowEvent::MouseInput {
+                            device_id: _,
+                            state: _,
+                            button,
+                            modifiers: _,
+                        } => match button {
+                            winit::event::MouseButton::Left => {
+                                if cursor_in_window {
+                                    let _ = window.drag_window();
+                                }
+                            }
+                            _ => {}
+                        },
+                        _ => {}
                     }
                 }
-                Event::MainEventsCleared => {
-                    render_state.window().request_redraw();
+                winit::event::Event::MainEventsCleared => {
+                    //
                 }
+                winit::event::Event::RedrawRequested(window_id) if window_id == window.id() => {}
                 _ => {}
             }
-        })
+        });
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct WindowConfig<'a> {
-    size: (u32, u32),
-    min_size: Option<(u32, u32)>,
-    max_size: Option<(u32, u32)>,
-    title: &'a str,
+#[derive(Copy, Clone, Debug)]
+pub struct FramerConfig {
+    pub width: u64,
+    pub height: u64,
+    pub min_width: u64,
+    pub min_height: u64,
+    pub max_width: u64,
+    pub max_height: u64,
+    pub resizable: bool,
 }
 
-impl<'a> Default for WindowConfig<'a> {
+impl Default for FramerConfig {
     fn default() -> Self {
         Self {
-            size: (800, 600),
-            min_size: Some((300, 200)),
-            max_size: None,
-            title: "Framer-Application",
+            width: 640,
+            height: 480,
+            min_width: 320,
+            min_height: 240,
+            max_width: u64::MAX,
+            max_height: u64::MAX,
+            resizable: true,
         }
     }
 }

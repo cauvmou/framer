@@ -1,11 +1,9 @@
-use framer::Application;
-use winit::error::OsError;
+use framer::{error::FramerError, FramerApplication, FramerConfig};
 
 #[async_std::main]
-pub async fn main() -> Result<(), OsError> {
-    let application = Application {
+pub async fn main() -> Result<(), FramerError> {
+    FramerApplication::new(&FramerConfig {
         ..Default::default()
-    };
-
-    application.launch().await
+    })
+    .launch(|| todo!())
 }
