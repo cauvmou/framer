@@ -1,4 +1,4 @@
-use crate::component::Element;
+use crate::element::Element;
 
 use super::util::{point::Point, rectangle::Rectangle, size::Size};
 
@@ -21,7 +21,7 @@ impl<'e> LayoutNode<'e> {
 
     pub fn format(&mut self) {
         self.children.iter_mut().for_each(|child| {
-            child.z_index += self.z_index+1;
+            child.z_index += self.z_index + 1;
             child.format();
         });
         self.element.strategy.apply(self);
@@ -29,7 +29,10 @@ impl<'e> LayoutNode<'e> {
 
     pub fn flatten(mut self) -> Vec<View<'e>> {
         let children = self.children;
-        let mut cast = children.into_iter().flat_map(|node| node.flatten()).collect::<Vec<View<'e>>>();
+        let mut cast = children
+            .into_iter()
+            .flat_map(|node| node.flatten())
+            .collect::<Vec<View<'e>>>();
         self.children = Vec::new();
         cast.push(self.into());
         cast.sort_by(|a, b| a.z_index.cmp(&b.z_index));

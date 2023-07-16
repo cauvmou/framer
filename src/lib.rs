@@ -5,10 +5,12 @@ use winit::{
     window::WindowBuilder,
 };
 
-pub mod component;
+pub mod element;
 pub mod error;
 pub mod layout;
+pub mod reactive;
 pub mod render;
+pub mod style;
 pub(crate) mod util;
 
 pub struct FramerApplication {}

@@ -1,5 +1,5 @@
 use framer::{
-    component::Element,
+    element::Element,
     layout::{constraint::Constraint, strategy::BlockLayout, util::size::Size},
 };
 
@@ -19,7 +19,11 @@ pub fn main() {
 
     let element = Element::new(&BlockLayout {})
         .with_constraints(constraint1)
-        .add_child(Element::new(&BlockLayout {}).with_constraints(constraint2).add_child(Element::new(&BlockLayout {}).with_constraints(constraint3)))
+        .add_child(
+            Element::new(&BlockLayout {})
+                .with_constraints(constraint2)
+                .add_child(Element::new(&BlockLayout {}).with_constraints(constraint3)),
+        )
         .add_child(Element::new(&BlockLayout {}).with_constraints(constraint2))
         .add_child(Element::new(&BlockLayout {}).with_constraints(constraint2));
 

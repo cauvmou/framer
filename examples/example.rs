@@ -5,5 +5,5 @@ pub async fn main() -> Result<(), FramerError> {
     FramerApplication::new(&FramerConfig {
         ..Default::default()
     })
-    .launch(|| todo!())
+    .launch(move || {})
 }
